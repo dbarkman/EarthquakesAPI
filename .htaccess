@@ -1,0 +1,5 @@
+Satisfy Any
+
+RewriteEngine On
+
+RewriteRule ^(testPass|earthquakes|events|hotSpots|feltIt)?$ index.php?noun=$1 [QSA]
