@@ -28,7 +28,16 @@ if (isset($_REQUEST['noun'])) {
                 $parameters['startDate'] = $_REQUEST['startDate'];
                 $parameters['endDate'] = $_REQUEST['endDate'];
             } else {
-                $parameters['count'] = (isset($_REQUEST['count'])) ? $_REQUEST['count'] : 100;
+                $maxCount = 1000;
+                if (isset($_REQUEST['count'])) {
+                    if ($_REQUEST['count'] > $maxCount) {
+                        $parameters['count'] = $maxCount;
+                    } else {
+                        $parameters['count'] = $_REQUEST['count'];
+                    }
+                } else {
+                    $parameters['count'] = $maxCount;
+                }
             }
             if (isset($_REQUEST['location']) && $_REQUEST['location'] == true) {
                 $parameters['latitude'] = $_REQUEST['latitude'];
@@ -38,9 +47,6 @@ if (isset($_REQUEST['noun'])) {
             }
             if (isset($_REQUEST['magnitude'])) {
                 $parameters['magnitude'] = $_REQUEST['magnitude'];
-            }
-            if (isset($_REQUEST['intensity'])) {
-                $parameters['intensity'] = $_REQUEST['intensity'];
             }
             if (isset($_REQUEST['intensity'])) {
                 $parameters['intensity'] = $_REQUEST['intensity'];
