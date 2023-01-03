@@ -24,14 +24,19 @@ if (isset($_REQUEST['noun'])) {
 
     } else if ($_REQUEST['noun'] === 'token') {
         if ($_SERVER['REQUEST_METHOD'] == 'POST') {
-
             if (isset($_REQUEST['token']) && isset($_REQUEST['debug'])) {
                 $earthquakesAPI->createToken($_REQUEST['token'], $_REQUEST['debug']);
             } else {
                 $earthquakesAPI->badRequest('You must include both \'token\' and \'debug\' variables when calling the \'token\' endpoint with POST.');
             }
+        } else if ($_SERVER['REQUEST_METHOD'] == 'DELETE') {
+            if (isset($_REQUEST['token'])) {
+                $earthquakesAPI->deleteToken($_REQUEST['token']);
+            } else {
+                $earthquakesAPI->badRequest('You must include \'token\' when calling the \'token\' endpoint with DELETE.');
+            }
         } else {
-            $earthquakesAPI->badRequest('There was another problem with your post.');
+            $earthquakesAPI->badRequest('There was another problem with your delete.');
         }
 
     } else if (strpos(strtolower($_REQUEST['noun']), 'earthquakes') !== false) {
@@ -63,6 +68,9 @@ if (isset($_REQUEST['noun'])) {
             }
             if (isset($_REQUEST['order'])) {
                 $parameters['order'] = $_REQUEST['order'];
+            }
+            if (isset($_REQUEST['orderBy'])) {
+                $parameters['orderBy'] = $_REQUEST['orderBy'];
             }
 
             $locationData = 0;
@@ -246,19 +254,14 @@ class EarthquakesAPI
 	private $_errorCode;
 	private $_response;
 
-	private $_queryTime;
-
 	private $_start;
 	private $_time;
-	private $_packageSize;
-	private $_size;
 	private $_memoryUsage;
 	private $_count;
 
 	private $_appVersion;
 	private $_osVersion;
 	private $_device;
-	private $_machine;
 
 	private $_logger;
 	private $_db;
@@ -271,8 +274,6 @@ class EarthquakesAPI
 		$this->_packageSize = null;
 		$this->_response = null;
 		$this->_responseType = 'json';
-
-		$this->_queryTime = 0.0;
 
 		$container = new Container();
 
@@ -287,9 +288,7 @@ class EarthquakesAPI
 
 	private function beginRequest()
 	{
-		$this->logIt('info', '');
 		$this->logIt('info', '--------------------------------------------------------------------------------');
-		$this->logIt('info', 'API Session Started');
         $this->logIt('info', 'Query String: ' . $_SERVER['QUERY_STRING']);
 
 		$this->_uuid = (isset($_REQUEST['uuid'])) ? $_REQUEST['uuid'] : '';
@@ -310,10 +309,13 @@ class EarthquakesAPI
 		$this->_appVersion = (isset($_REQUEST['appVersion'])) ? $_REQUEST['appVersion'] : '';
 		$this->_osVersion = (isset($_REQUEST['osVersion'])) ? $_REQUEST['osVersion'] : '';
 		$this->_device = (isset($_REQUEST['device'])) ? $_REQUEST['device'] : '';
-		$this->_machine = (isset($_REQUEST['machine'])) ? $_REQUEST['machine'] : '';
 
 		$this->logIt('info', 'TIME: ' . $this->_timeStamp);
 		$this->logIt('info', 'IP: ' . $this->_ip);
+        $this->logIt('info', 'PLATFORM: ' . $this->_platform);
+        $this->logIt('info', 'APP VERSION: ' . $this->_appVersion);
+        $this->logIt('info', 'OS VERSION: ' . $this->_osVersion);
+        $this->logIt('info', 'DEVICE: ' . $this->_device);
 		$this->logIt('info', 'AGENT: ' . $this->_agent);
 		$this->logIt('info', 'LANGUAGE: ' . $this->_language);
 		$this->logIt('info', 'VERB: ' . $this->_method);
@@ -449,6 +451,7 @@ class EarthquakesAPI
 
     public function createToken($token, $debug)
     {
+        $uuid = $_POST['uuid'] ?? mysqli_real_escape_string($this->_db, UUID::getUUID());
         $sendPush = $_POST['sendPush'] ?? 0;
         $magnitude = $_POST['magnitude'] ?? 6;
         $location = $_POST['location'] ?? 0;
@@ -456,8 +459,10 @@ class EarthquakesAPI
         $units = $_POST['units'] ?? '';
         $latitude = $_POST['latitude'] ?? 0;
         $longitude = $_POST['longitude'] ?? 0;
-        $tokenObject = new Token($this->_logger, $this->_db, $token, $debug, $sendPush, $magnitude, $location, $radius, $units, $latitude, $longitude);
-        if ($tokenObject->getTokenExists() === 0) {
+        $tokenObject = new Token($this->_logger, $this->_db, $uuid, $token, $debug, $sendPush, $magnitude, $location, $radius, $units, $latitude, $longitude);
+        $tokenExists = $tokenObject->getTokenExists();
+        $idExists = $tokenObject->getIdExists();
+        if ($tokenExists === FALSE && $idExists === FALSE) {
             if ($tokenObject->saveToken() === FALSE) {
                 http_response_code(500);
                 $errorCode = 'tokenNotInserted';
@@ -468,7 +473,7 @@ class EarthquakesAPI
                 http_response_code(201);
                 $this->echoResponse('none', array(), '', 'success', array());
             }
-        } else {
+        } else if ($tokenExists !== FALSE && $idExists === FALSE) {
             if ($tokenObject->updateToken() === FALSE) {
                 http_response_code(500);
                 $errorCode = 'tokenNotUpdated';
@@ -479,8 +484,43 @@ class EarthquakesAPI
                 http_response_code(200);
                 $this->echoResponse('none', array(), '', 'success', array());
             }
+        } else if ($tokenExists === FALSE && $idExists !== FALSE) {
+            if ($tokenObject->updateId() === FALSE) {
+                http_response_code(500);
+                $errorCode = 'idNotUpdated';
+                $friendlyError = 'ID could not be updated.';
+                $errors = array($friendlyError);
+                $this->echoResponse($errorCode, $errors, $friendlyError, 'fail', array());
+            } else {
+                http_response_code(200);
+                $this->echoResponse('none', array(), '', 'success', array());
+            }
+        } else {
+            if ($tokenObject->updateTokenSettings() === FALSE) {
+                http_response_code(500);
+                $errorCode = 'tokenSettingsNotUpdated';
+                $friendlyError = 'Token settings could not be updated.';
+                $errors = array($friendlyError);
+                $this->echoResponse($errorCode, $errors, $friendlyError, 'fail', array());
+            } else {
+                http_response_code(200);
+                $this->echoResponse('none', array(), '', 'success', array());
+            }
         }
         $this->completeRequest();
+    }
+
+    public function deleteToken($token) {
+        if (Token::deleteToken($this->_logger, $this->_db, $token) === FALSE) {
+            http_response_code(500);
+            $errorCode = 'tokenNotDeleted';
+            $friendlyError = 'Token could not be deleted.';
+            $errors = array($friendlyError);
+            $this->echoResponse($errorCode, $errors, $friendlyError, 'fail', array());
+        } else {
+            http_response_code(200);
+            $this->echoResponse('none', array(), '', 'success', array());
+        }
     }
 
     ///////////////////////////////////////////////////////////////////////////////
@@ -522,19 +562,13 @@ class EarthquakesAPI
 	private function completeRequest()
 	{
 		$this->_time = (microtime(true) - $this->_start);
-		$this->_packageSize = strlen($this->_response);
-		$this->_size = number_format($this->_packageSize);
 		$this->_memoryUsage = number_format(memory_get_usage());
 
-		$this->logIt('info', 'Query Time: ' . $this->_queryTime);
 		$this->logIt('info', 'Payload Time: ' . $this->_time);
-		$this->logIt('info', 'Payload Size: ' . $this->_size);
         $this->logIt('info', 'Count: ' . $this->_count);
 		$this->logIt('info', 'Memory Usage: ' . $this->_memoryUsage);
 		$this->logIt('info', 'HTTP Response: ' . http_response_code());
-		$this->logIt('info', 'API Session Ended');
 		$this->logIt('info', '--------------------------------------------------------------------------------');
-		$this->logIt('info', '');
 
 		$osVersion = '';
 		$osAPILevel = '';
@@ -575,14 +609,11 @@ class EarthquakesAPI
 			'language' => $this->_language,
 			'httpStatus' => http_response_code(),
 			'errorCode' => $this->_errorCode,
-			'queryTime' => $this->_queryTime,
 			'time' => $this->_time,
-			'size' => $this->_size,
 			'memory' => $this->_memoryUsage,
 			'appVersion' => $this->_appVersion,
 			'platform' => $this->_platform,
 			'device' => urldecode($this->_device),
-			'machine' => $this->_machine,
 			'osVersion' => $this->_osVersion,
 			'ip' => $this->_ip
 		);
