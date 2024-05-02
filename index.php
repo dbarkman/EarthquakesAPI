@@ -271,9 +271,7 @@ class EarthquakesAPI
 	public function __construct()
 	{
 		$this->_start = microtime(true);
-		$this->_packageSize = null;
 		$this->_response = null;
-		$this->_responseType = 'json';
 
 		$container = new Container();
 
